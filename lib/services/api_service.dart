@@ -6,7 +6,7 @@ class ApiService {
   final String _baseUrl = 'https://jsonplaceholder.typicode.com';
 
   Future<List<User>> getUsers() async {
-    final response = await http.get(Uri.parse('\$_baseUrl/users'));
+    final response = await http.get(Uri.parse('$_baseUrl/users'));
 
     if (response.statusCode == 200) {
       List<dynamic> data = json.decode(response.body);
