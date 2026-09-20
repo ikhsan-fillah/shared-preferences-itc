@@ -1,52 +1,32 @@
-# Shared Preferences ITC — Tutorial Penyimpanan Lokal dengan Flutter
+# Shared Preferences ITC — Menyimpan Pengguna Terakhir Dipilih
 
-Aplikasi daftar pengguna sederhana untuk belajar **Shared Preferences**: menyimpan pengguna terakhir yang dipilih secara lokal agar datanya tetap tersedia ketika aplikasi ditutup lalu dibuka kembali. Proyek ini melanjutkan materi Networking, sehingga data pengguna tetap diambil dari API terlebih dahulu.
+Latihan ini melanjutkan project Networking yang sudah tersedia. Kita **tidak membahas ulang** cara mengambil data dari API, model `User`, `ApiService`, maupun struktur awal GetX.
 
-Dibuat sebagai materi praktikum. Fokusnya bukan pada tampilan UI, tetapi pada alur data: **API → Controller → Shared Preferences → UI**.
+Fokus praktikum ini hanya pada **Shared Preferences**: menyimpan pengguna terakhir yang dipilih secara lokal, membaca kembali data tersebut saat aplikasi dibuka, dan menghapusnya.
 
-Setelah mengikuti repo ini, kamu akan paham:
+Setelah mengikuti bagian ini, kamu akan paham:
 
-- Mengambil data pengguna dari API dengan package `http`
-- Memahami pemisahan `ApiService` dan `LocalStorageService`
-- Menyimpan data sederhana menggunakan `setInt()` dan `setString()`
-- Membaca data lokal menggunakan `getInt()` dan `getString()`
-- Menghapus data lokal menggunakan `remove()`
-- Menangani data yang belum tersedia dengan `null`
-- Menggunakan `GetxController`, `GetBuilder`, dan `Binding` untuk menghubungkan logika dengan UI
+- Menambahkan package `shared_preferences`
+- Membuat key untuk data lokal
+- Menyimpan data dengan `setInt()` dan `setString()`
+- Membaca data dengan `getInt()` dan `getString()`
+- Menangani data yang belum tersedia (`null`)
+- Menghapus data dengan `remove()`
+- Menampilkan data lokal kembali melalui `UserController` dan `GetBuilder`
 
-## Struktur Project
+## Hasil Akhir
 
-```text
-lib/
- ├─ main.dart                              ← gerbang utama aplikasi
- ├─ bindings/
- │   └─ user_binding.dart                  ← pendaftar ApiService dan UserController
- ├─ controllers/
- │   └─ user_controller.dart               ← otak: data API + pengguna terakhir dipilih
- ├─ models/
- │   └─ user.dart                          ← bentuk data pengguna
- ├─ services/
- │   ├─ api_service.dart                   ← mengambil daftar pengguna dari API
- │   └─ local_storage_service.dart         ← simpan, baca, dan hapus data lokal
- └─ views/
-     └─ home_view.dart                     ← daftar pengguna + kartu data tersimpan
-```
+Aplikasi yang sebelumnya sudah menampilkan daftar pengguna dari API akan memiliki fitur tambahan:
 
-## Cara Menjalankan
+1. Setiap pengguna memiliki tombol/ikon bookmark untuk dipilih.
+2. Ketika bookmark ditekan, ID, nama, dan email pengguna disimpan ke Shared Preferences.
+3. Kartu **Pengguna Terakhir Dipilih** muncul di atas daftar pengguna.
+4. Setelah aplikasi ditutup dan dibuka kembali, kartu tersebut tetap menampilkan data terakhir.
+5. Pengguna dapat menghapus data tersimpan melalui tombol hapus.
 
-```bash
-git clone https://github.com/ikhsan-fillah/shared-preferences-itc.git
-cd shared-preferences-itc
-flutter pub add shared_preferences
-flutter pub get
-flutter run
-```
+## Data yang Disimpan
 
-> Jika package `get` dan `http` belum tersedia pada project baru, tambahkan juga dengan `flutter pub add get http`.
-
-## Konsep Latihan
-
-Aplikasi mengambil daftar pengguna dari API `jsonplaceholder`. Ketika salah satu pengguna dipilih, aplikasi menyimpan tiga data sederhana di Shared Preferences.
+Shared Preferences menyimpan data dalam format **key-value**.
 
 | Key               | Tipe Data | Isi                             |
 | ----------------- | --------- | ------------------------------- |
@@ -54,112 +34,51 @@ Aplikasi mengambil daftar pengguna dari API `jsonplaceholder`. Ketika salah satu
 | `last_user_name`  | `String`  | Nama pengguna terakhir dipilih  |
 | `last_user_email` | `String`  | Email pengguna terakhir dipilih |
 
-Alurnya:
+Alur datanya:
 
 ```text
-Daftar pengguna diambil dari API
+Pengguna memilih salah satu data dari daftar
             ↓
-Pengguna menekan ikon bookmark
+Controller menerima object User
             ↓
-ID, nama, dan email disimpan dengan Shared Preferences
+LocalStorageService menyimpan tiap property dengan key-value
             ↓
-Aplikasi ditutup
+Shared Preferences menyimpan data pada perangkat
             ↓
 Aplikasi dibuka kembali
             ↓
-Data pengguna terakhir dibaca dan ditampilkan kembali
+Controller membaca data dan UI menampilkan kartu pengguna terakhir
 ```
 
-## Langkah Membangun dari Awal
+## Langkah Implementasi
 
-Urutan pengerjaannya dari data ke tampilan: buat bentuk data, ambil data dari API, buat penyimpanan lokal, sambungkan ke controller, lalu tampilkan pada halaman. Setiap step memakai hasil dari step sebelumnya.
+Urutan pengerjaannya: siapkan package, buat service lokal, sambungkan ke controller, lalu tampilkan hasilnya di halaman utama.
 
-### Step 1 — Siapkan Project dan Package
+### Step 1 — Tambahkan Package
 
-Buat project Flutter baru, lalu tambahkan package yang dibutuhkan.
+Di terminal pada folder project, jalankan:
 
 ```bash
-flutter create shared_preferences_itc
-cd shared_preferences_itc
-flutter pub add get
-flutter pub add http
 flutter pub add shared_preferences
 ```
 
-Kegunaan package:
+Setelah itu jalankan:
 
-| Package              | Kegunaan                                  |
-| -------------------- | ----------------------------------------- |
-| `get`                | State management dan dependency injection |
-| `http`               | Mengambil data dari API                   |
-| `shared_preferences` | Menyimpan data sederhana secara lokal     |
-
-### Step 2 — Buat Bentuk Data: `models/user.dart`
-
-Kelas `User` adalah cetakan data pengguna. Data JSON dari API akan diubah menjadi object Dart melalui `User.fromJson()`.
-
-```dart
-class User {
-  final int id;
-  final String name;
-  final String email;
-
-  User({
-    required this.id,
-    required this.name,
-    required this.email,
-  });
-
-  factory User.fromJson(Map<String, dynamic> json) {
-    return User(
-      id: json['id'],
-      name: json['name'],
-      email: json['email'],
-    );
-  }
-}
+```bash
+flutter pub get
 ```
 
-Model ini dipakai oleh dua bagian aplikasi:
+Package `shared_preferences` menyediakan class `SharedPreferences` agar Flutter dapat menyimpan data key-value secara lokal.
 
-- `ApiService`, untuk mengubah respons API menjadi object `User`
-- `LocalStorageService`, untuk membuat ulang object `User` dari data lokal
+### Step 2 — Buat Service Lokal
 
-### Step 3 — Buat Pengambil Data API: `services/api_service.dart`
+Buat file baru:
 
-File ini hanya bertugas melakukan request HTTP dan mengubah respons JSON menjadi `List<User>`. Ia tidak mengatur UI dan tidak menyimpan data lokal.
-
-```dart
-import 'dart:convert';
-
-import 'package:http/http.dart' as http;
-
-import '../models/user.dart';
-
-class ApiService {
-  final String _baseUrl = 'https://jsonplaceholder.typicode.com';
-
-  Future<List<User>> getUsers() async {
-    final response = await http.get(
-      Uri.parse('$_baseUrl/users'),
-    );
-
-    if (response.statusCode == 200) {
-      final List<dynamic> data = json.decode(response.body);
-
-      return data.map((json) => User.fromJson(json)).toList();
-    }
-
-    throw Exception('Gagal memuat data pengguna dari API');
-  }
-}
+```text
+lib/services/local_storage_service.dart
 ```
 
-> Penting: tulis `Uri.parse('$_baseUrl/users')` tanpa karakter `\` sebelum `$`. Jika ditulis `\$_baseUrl`, aplikasi tidak melakukan interpolasi variabel dan respons yang diterima dapat berupa HTML, bukan JSON.
-
-### Step 4 — Buat Penyimpanan Lokal: `services/local_storage_service.dart`
-
-Inilah bagian utama materi Shared Preferences. File ini bertugas menyimpan, membaca, dan menghapus pengguna terakhir yang dipilih.
+Semua kode yang berhubungan dengan Shared Preferences diletakkan di file ini. Dengan begitu, controller tidak perlu mengetahui detail key maupun cara menyimpan data.
 
 ```dart
 import 'package:shared_preferences/shared_preferences.dart';
@@ -167,6 +86,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
 
 class LocalStorageService {
+  // Key harus konsisten saat data disimpan dan dibaca.
   static const _keyUserId = 'last_user_id';
   static const _keyUserName = 'last_user_name';
   static const _keyUserEmail = 'last_user_email';
@@ -174,6 +94,7 @@ class LocalStorageService {
   Future<void> saveLastSelectedUser(User user) async {
     final prefs = await SharedPreferences.getInstance();
 
+    // Menyimpan property User sebagai data sederhana.
     await prefs.setInt(_keyUserId, user.id);
     await prefs.setString(_keyUserName, user.name);
     await prefs.setString(_keyUserEmail, user.email);
@@ -182,20 +103,24 @@ class LocalStorageService {
   Future<User?> getLastSelectedUser() async {
     final prefs = await SharedPreferences.getInstance();
 
+    // Membaca data berdasarkan key yang sama.
     final id = prefs.getInt(_keyUserId);
     final name = prefs.getString(_keyUserName);
     final email = prefs.getString(_keyUserEmail);
 
+    // Data belum ada atau tidak lengkap.
     if (id == null || name == null || email == null) {
       return null;
     }
 
+    // Membuat ulang object User dari data lokal.
     return User(id: id, name: name, email: email);
   }
 
   Future<void> removeLastSelectedUser() async {
     final prefs = await SharedPreferences.getInstance();
 
+    // Menghapus setiap data berdasarkan key-nya.
     await prefs.remove(_keyUserId);
     await prefs.remove(_keyUserName);
     await prefs.remove(_keyUserEmail);
@@ -203,187 +128,155 @@ class LocalStorageService {
 }
 ```
 
-Penjelasan method:
+### Penjelasan Service
 
-- `SharedPreferences.getInstance()` membuka akses ke penyimpanan lokal aplikasi.
-- `setInt()` dan `setString()` menyimpan value berdasarkan key.
-- `getInt()` dan `getString()` membaca value dari key yang sama.
-- Nilai hasil `get...()` dapat berupa `null` apabila data belum pernah disimpan.
-- `remove()` menghapus satu data berdasarkan key.
-
-### Step 5 — Buat Otaknya: `controllers/user_controller.dart`
-
-Controller menjadi penghubung antara service dan tampilan. Controller memuat daftar pengguna dari API serta pengguna terakhir dari Shared Preferences.
+#### Key sebagai identitas data
 
 ```dart
-import 'package:get/get.dart';
-
-import '../models/user.dart';
-import '../services/api_service.dart';
-import '../services/local_storage_service.dart';
-
-class UserController extends GetxController {
-  final ApiService apiService;
-  final LocalStorageService _localStorageService = LocalStorageService();
-
-  UserController({required this.apiService});
-
-  List<User> users = [];
-  bool isLoading = false;
-  String errorMessage = '';
-  User? lastSelectedUser;
-
-  @override
-  void onInit() {
-    super.onInit();
-    getUsers();
-    getLastSelectedUser();
-  }
-
-  Future<void> getUsers() async {
-    try {
-      isLoading = true;
-      errorMessage = '';
-      update();
-
-      users = await apiService.getUsers();
-    } catch (error) {
-      errorMessage = error.toString();
-    } finally {
-      isLoading = false;
-      update();
-    }
-  }
-
-  Future<void> getLastSelectedUser() async {
-    lastSelectedUser = await _localStorageService.getLastSelectedUser();
-    update();
-  }
-
-  Future<void> selectUser(User user) async {
-    await _localStorageService.saveLastSelectedUser(user);
-    lastSelectedUser = user;
-    update();
-  }
-
-  Future<void> removeLastSelectedUser() async {
-    await _localStorageService.removeLastSelectedUser();
-    lastSelectedUser = null;
-    update();
-  }
-}
+static const _keyUserName = 'last_user_name';
 ```
 
-Alur `selectUser()`:
+`last_user_name` adalah key. Shared Preferences memakai key ini untuk menemukan value yang tepat. Karena key digunakan berkali-kali, kita menyimpannya sebagai konstanta agar tidak salah ketik.
+
+#### Menyimpan data
+
+```dart
+await prefs.setInt(_keyUserId, user.id);
+await prefs.setString(_keyUserName, user.name);
+```
+
+- `setInt()` dipakai untuk `id` karena `id` bertipe `int`.
+- `setString()` dipakai untuk `name` dan `email` karena keduanya bertipe `String`.
+- `await` dipakai karena proses penyimpanan bersifat asinkron.
+
+#### Membaca data
+
+```dart
+final name = prefs.getString(_keyUserName);
+```
+
+Method `getString()` dapat mengembalikan `null` jika data belum pernah disimpan atau key tidak sesuai. Karena itu, semua data diperiksa terlebih dahulu sebelum object `User` dibuat kembali.
+
+#### Menghapus data
+
+```dart
+await prefs.remove(_keyUserName);
+```
+
+`remove()` hanya menghapus satu data berdasarkan key. Pada latihan ini, tiga key dihapus agar informasi pengguna terakhir benar-benar hilang.
+
+### Step 3 — Tambahkan State pada Controller
+
+Buka file berikut:
 
 ```text
-Tombol bookmark ditekan
-        ↓
-selectUser(user) dipanggil
-        ↓
-saveLastSelectedUser(user) menyimpan data ke Shared Preferences
-        ↓
-lastSelectedUser diperbarui
-        ↓
-update() memberi tahu GetBuilder untuk membangun ulang UI
+lib/controllers/user_controller.dart
 ```
 
-### Step 6 — Daftarkan Dependency: `bindings/user_binding.dart`
-
-Binding adalah tempat mendaftarkan object yang diperlukan oleh halaman. `ApiService` dibuat terlebih dahulu, lalu dimasukkan ke constructor `UserController`.
+Tambahkan import service lokal:
 
 ```dart
-import 'package:get/get.dart';
+import '../services/local_storage_service.dart';
+```
 
-import '../controllers/user_controller.dart';
-import '../services/api_service.dart';
+Di dalam class `UserController`, tambahkan property berikut:
 
-class UserBinding extends Bindings {
-  @override
-  void dependencies() {
-    Get.lazyPut<ApiService>(() => ApiService());
+```dart
+final LocalStorageService _localStorageService = LocalStorageService();
 
-    Get.lazyPut<UserController>(
-      () => UserController(apiService: Get.find<ApiService>()),
-    );
-  }
+// Data pengguna terakhir yang akan ditampilkan pada UI.
+User? lastSelectedUser;
+```
+
+`lastSelectedUser` menggunakan `User?` karena saat aplikasi pertama kali dijalankan, belum tentu ada pengguna yang sudah disimpan.
+
+### Step 4 — Baca Data Saat Controller Dibuat
+
+Pada method `onInit()`, tambahkan pemanggilan `getLastSelectedUser()`.
+
+```dart
+@override
+void onInit() {
+  super.onInit();
+
+  // Method pemuatan data API yang sudah ada pada project sebelumnya.
+  getUsers();
+
+  // Membaca pengguna terakhir dari Shared Preferences.
+  getLastSelectedUser();
 }
 ```
 
-`Get.lazyPut()` berarti GetX baru membuat object saat object tersebut pertama kali dibutuhkan.
-
-### Step 7 — Buat Wajah Aplikasi: `views/home_view.dart`
-
-Halaman utama melakukan tiga hal:
-
-1. Menampilkan loading saat data API diambil.
-2. Menampilkan kartu pengguna terakhir apabila data lokal tersedia.
-3. Menampilkan daftar pengguna dari API dengan tombol bookmark.
+Kemudian tambahkan method berikut di dalam `UserController`:
 
 ```dart
-import 'package:flutter/material.dart';
-import 'package:get/get.dart';
+Future<void> getLastSelectedUser() async {
+  lastSelectedUser = await _localStorageService.getLastSelectedUser();
 
-import '../controllers/user_controller.dart';
-import '../models/user.dart';
-
-class HomeView extends StatelessWidget {
-  const HomeView({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Daftar Pengguna')),
-      body: GetBuilder<UserController>(
-        builder: (controller) {
-          if (controller.isLoading) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (controller.errorMessage.isNotEmpty) {
-            return Center(child: Text(controller.errorMessage));
-          }
-
-          return ListView(
-            children: [
-              if (controller.lastSelectedUser != null)
-                _LastSelectedUserCard(
-                  user: controller.lastSelectedUser!,
-                  onDelete: controller.removeLastSelectedUser,
-                ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: Text(
-                  'Daftar Pengguna dari API',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-              ...controller.users.map(
-                (user) => Card(
-                  margin: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 6,
-                  ),
-                  child: ListTile(
-                    leading: CircleAvatar(child: Text(user.name[0])),
-                    title: Text(user.name),
-                    subtitle: Text(user.email),
-                    trailing: IconButton(
-                      tooltip: 'Pilih pengguna',
-                      icon: const Icon(Icons.bookmark_add_outlined),
-                      onPressed: () => controller.selectUser(user),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
+  // Memberi tahu GetBuilder agar UI dibangun ulang.
+  update();
 }
+```
 
+Saat aplikasi dibuka, controller langsung meminta data lokal. Jika data tersedia, `lastSelectedUser` berisi object `User`; jika belum tersedia, nilainya `null`.
+
+### Step 5 — Buat Method Memilih Pengguna
+
+Tambahkan method berikut ke dalam `UserController`:
+
+```dart
+Future<void> selectUser(User user) async {
+  // Menyimpan pengguna yang dipilih ke Shared Preferences.
+  await _localStorageService.saveLastSelectedUser(user);
+
+  // Memperbarui state agar hasilnya langsung terlihat.
+  lastSelectedUser = user;
+  update();
+}
+```
+
+Method ini menerima object `User` dari item daftar. Object tersebut disimpan sebagai tiga value sederhana, lalu UI diperbarui tanpa perlu menutup aplikasi.
+
+### Step 6 — Buat Method Menghapus Data
+
+Tambahkan method berikut ke dalam `UserController`:
+
+```dart
+Future<void> removeLastSelectedUser() async {
+  // Menghapus data dari Shared Preferences.
+  await _localStorageService.removeLastSelectedUser();
+
+  // Mengosongkan state agar kartu hilang dari UI.
+  lastSelectedUser = null;
+  update();
+}
+```
+
+Setelah `lastSelectedUser` menjadi `null`, kondisi pada tampilan akan membuat kartu pengguna terakhir tidak lagi ditampilkan.
+
+### Step 7 — Tambahkan Kartu Pengguna Terakhir
+
+Buka file:
+
+```text
+lib/views/home_view.dart
+```
+
+Pada `ListView` yang sudah menampilkan daftar pengguna, tambahkan kode berikut **di bagian paling atas** dari `children`:
+
+```dart
+if (controller.lastSelectedUser != null)
+  _LastSelectedUserCard(
+    user: controller.lastSelectedUser!,
+    onDelete: controller.removeLastSelectedUser,
+  ),
+```
+
+Kondisi tersebut berarti: kartu hanya ditampilkan jika terdapat data pengguna yang sudah disimpan.
+
+Kemudian tambahkan widget berikut di bagian bawah file `home_view.dart`:
+
+```dart
 class _LastSelectedUserCard extends StatelessWidget {
   final User user;
   final VoidCallback onDelete;
@@ -399,7 +292,9 @@ class _LastSelectedUserCard extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       color: Theme.of(context).colorScheme.secondaryContainer,
       child: ListTile(
-        leading: CircleAvatar(child: Text(user.name[0])),
+        leading: CircleAvatar(
+          child: Text(user.name[0]),
+        ),
         title: const Text('Pengguna Terakhir Dipilih'),
         subtitle: Text('${user.name}\n${user.email}'),
         isThreeLine: true,
@@ -414,56 +309,43 @@ class _LastSelectedUserCard extends StatelessWidget {
 }
 ```
 
-Bagian penting pada tampilan:
+Widget ini menerima:
+
+- `user`: data pengguna yang dibaca dari controller.
+- `onDelete`: function untuk menghapus data lokal ketika tombol ikon hapus ditekan.
+
+### Step 8 — Tambahkan Tombol Pilih pada Daftar Pengguna
+
+Pada widget item pengguna yang sudah ada, tambahkan tombol atau `IconButton` berikut:
 
 ```dart
-if (controller.lastSelectedUser != null)
+IconButton(
+  tooltip: 'Pilih pengguna',
+  icon: const Icon(Icons.bookmark_add_outlined),
+  onPressed: () => controller.selectUser(user),
+)
 ```
 
-Kartu hanya muncul ketika Shared Preferences sudah memiliki data pengguna.
+Saat ikon bookmark ditekan, object `user` dari daftar dikirim ke `selectUser(user)`. Controller kemudian menyimpan property pengguna ke Shared Preferences.
+
+Contoh jika item pengguna memakai `ListTile`:
 
 ```dart
-onPressed: () => controller.selectUser(user)
-```
-
-Tombol bookmark mengirim object `User` yang dipilih ke controller untuk disimpan.
-
-```dart
-onPressed: controller.removeLastSelectedUser
-```
-
-Tombol hapus menghapus data lokal dan membuat kartu menghilang.
-
-### Step 8 — Nyalakan Aplikasi: `main.dart`
-
-`GetMaterialApp` digunakan sebagai root aplikasi agar GetX dapat menjalankan binding dan `GetBuilder`.
-
-```dart
-import 'package:flutter/material.dart';
-import 'package:get/get.dart';
-
-import 'bindings/user_binding.dart';
-import 'views/home_view.dart';
-
-void main() {
-  runApp(const MyApp());
-}
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return GetMaterialApp(
-      debugShowCheckedModeBanner: false,
-      initialBinding: UserBinding(),
-      home: const HomeView(),
-    );
-  }
-}
+ListTile(
+  leading: CircleAvatar(child: Text(user.name[0])),
+  title: Text(user.name),
+  subtitle: Text(user.email),
+  trailing: IconButton(
+    tooltip: 'Pilih pengguna',
+    icon: const Icon(Icons.bookmark_add_outlined),
+    onPressed: () => controller.selectUser(user),
+  ),
+)
 ```
 
 ### Step 9 — Jalankan dan Tes
+
+Jalankan aplikasi:
 
 ```bash
 flutter run
@@ -471,21 +353,69 @@ flutter run
 
 Yang perlu dites:
 
-1. Daftar pengguna dari API tampil pada halaman utama.
+1. Daftar pengguna dari project Networking sebelumnya tetap tampil.
 2. Tekan ikon bookmark pada salah satu pengguna.
 3. Kartu **Pengguna Terakhir Dipilih** muncul di bagian atas.
-4. Tutup aplikasi sepenuhnya, lalu jalankan kembali.
-5. Kartu masih menampilkan pengguna yang sama.
-6. Tekan ikon hapus pada kartu.
-7. Pastikan kartu menghilang, lalu buka ulang aplikasi untuk memastikan datanya telah terhapus.
+4. Tutup aplikasi sepenuhnya, bukan hanya hot reload.
+5. Jalankan aplikasi lagi.
+6. Pastikan kartu masih menunjukkan pengguna yang sama.
+7. Tekan ikon hapus pada kartu.
+8. Pastikan kartu menghilang.
+9. Tutup dan buka kembali aplikasi untuk memastikan data sudah benar-benar terhapus.
+
+## Kesalahan yang Sering Terjadi
+
+### Package belum ditambahkan
+
+Jika muncul error seperti berikut:
+
+```text
+Target of URI doesn't exist: package:shared_preferences/shared_preferences.dart
+```
+
+jalankan:
+
+```bash
+flutter pub add shared_preferences
+flutter pub get
+```
+
+### Key saat simpan dan baca berbeda
+
+Kode berikut tidak akan bekerja karena key berbeda:
+
+```dart
+await prefs.setString('last_user_name', user.name);
+final name = prefs.getString('lastUserName');
+```
+
+Gunakan key yang sama persis. Karena itu, latihan ini memakai konstanta seperti `_keyUserName`.
+
+### Data bernilai null
+
+Ini normal jika belum ada pengguna yang dipilih. Pastikan data diperiksa sebelum digunakan:
+
+```dart
+if (controller.lastSelectedUser != null) {
+  // Tampilkan kartu pengguna terakhir.
+}
+```
+
+### Tidak memakai await
+
+Operasi `set...()` dan `remove()` bersifat asinkron. Gunakan `await` agar proses penyimpanan atau penghapusan selesai sebelum state diperbarui.
+
+```dart
+await _localStorageService.saveLastSelectedUser(user);
+```
 
 ## Eksperimen Lanjutan
 
-Coba beberapa perubahan kecil berikut agar konsep Shared Preferences lebih mudah dipahami:
+Setelah fitur utama berhasil, coba beberapa pengembangan berikut:
 
-1. **Simpan data tambahan**: tambahkan key `last_user_company` atau `last_user_phone` dari respons API, kemudian tampilkan pada kartu pengguna terakhir.
-2. **Ganti satu key saat membaca**: simpan dengan key `last_user_name`, tetapi baca dengan key `lastUserName`. Nilai akan menjadi `null` karena key harus sama persis.
-3. **Hapus satu data saja**: pada `removeLastSelectedUser()`, hapus hanya `_keyUserName`. Saat aplikasi dibuka kembali, `getLastSelectedUser()` tetap mengembalikan `null` karena satu bagian data tidak lengkap.
-4. **Tambahkan dialog konfirmasi** sebelum menghapus pengguna terakhir.
+1. Tambahkan data pengguna lain dari API, misalnya nomor telepon atau website.
+2. Tambahkan `SnackBar` atau `Get.snackbar()` setelah pengguna berhasil dipilih.
+3. Tampilkan dialog konfirmasi sebelum data pengguna terakhir dihapus.
+4. Tambahkan fitur menyimpan tema terang/gelap menggunakan `setBool()` dan `getBool()`.
 
-> Prinsip yang perlu diingat: Shared Preferences cocok untuk data kecil dan sederhana. Setiap key menyimpan satu value secara mandiri. Untuk data tabel yang besar atau saling berelasi, gunakan database lokal seperti SQLite.
+> Prinsip yang perlu diingat: Shared Preferences digunakan untuk data kecil dan sederhana. Ia menyimpan setiap value secara mandiri berdasarkan key. Jangan gunakan Shared Preferences untuk kata sandi atau data sensitif.
