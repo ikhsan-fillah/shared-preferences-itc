@@ -13,6 +13,8 @@ Setelah mengikuti bagian ini, kamu akan paham:
 - Menangani data yang belum tersedia (`null`)
 - Menghapus data dengan `remove()`
 - Menampilkan data lokal kembali melalui `UserController` dan `GetBuilder`
+- Menyesuaikan `getUsers()` pada `UserController` agar kompatibel dengan pola state di atas
+- Menampilkan indikator loading dan error saat data lokal dimuat
 
 ## Hasil Akhir
 
@@ -52,7 +54,7 @@ Controller membaca data dan UI menampilkan kartu pengguna terakhir
 
 ## Langkah Implementasi
 
-Urutan pengerjaannya: siapkan package, buat service lokal, sambungkan ke controller, lalu tampilkan hasilnya di halaman utama.
+Urutan pengerjaannya: siapkan package, buat service lokal, sesuaikan controller yang sudah ada, sambungkan state baru, lalu tampilkan hasilnya di halaman utama.
 
 ### Step 1 — Tambahkan Package
 
@@ -165,15 +167,57 @@ await prefs.remove(_keyUserName);
 
 `remove()` hanya menghapus satu data berdasarkan key. Pada latihan ini, tiga key dihapus agar informasi pengguna terakhir benar-benar hilang.
 
-### Step 3 — Tambahkan State pada Controller
+### Step 3 — Sesuaikan Method getUsers() pada Controller
 
-Buka file berikut:
+Sebelum menambahkan state baru untuk Shared Preferences, pastikan dulu `getUsers()` pada `UserController` sudah dalam bentuk yang menyimpan data ke property controller, bukan sekadar mengembalikan `Future` seperti pola awal `fetchUsers()` pada project Networking. Penyesuaian ini diperlukan karena `GetBuilder` dan `update()` yang dipakai pada langkah-langkah berikutnya hanya bekerja jika controller memiliki state sendiri.
+
+Buka file:
 
 ```text
 lib/controllers/user_controller.dart
 ```
 
-Tambahkan import service lokal:
+Jika `getUsers()` di project kamu masih berbentuk seperti ini:
+
+```dart
+Future<List<User>> fetchUsers() {
+  return apiService.getUsers();
+}
+```
+
+ubah menjadi:
+
+```dart
+final List<User> users = [];
+bool isLoading = false;
+String errorMessage = '';
+
+Future<void> getUsers() async {
+  try {
+    isLoading = true;
+    errorMessage = '';
+    update();
+
+    users.assignAll(await apiService.getUsers());
+  } catch (error) {
+    errorMessage = error.toString();
+  } finally {
+    isLoading = false;
+    update();
+  }
+}
+```
+
+Penjelasan penyesuaian:
+
+- `users`, `isLoading`, dan `errorMessage` dijadikan property controller agar nilainya bertahan selama controller aktif, bukan hanya sesaat seperti nilai balik `Future`.
+- `update()` dipanggil dua kali: sesaat sebelum request dimulai (agar UI langsung menampilkan status loading) dan sesudah proses selesai di blok `finally` (agar UI menampilkan hasil akhir, baik berhasil maupun gagal).
+- `users.assignAll(...)` dipakai, bukan `users = ...`, karena `users` dideklarasikan sebagai `final`. `assignAll()` mengganti isi list tanpa mengganti object list itu sendiri.
+- Bagian `View` yang sebelumnya memakai `FutureBuilder` dengan memanggil `fetchUsers()` perlu diganti menjadi `GetBuilder<UserController>` yang membaca langsung `controller.users`, `controller.isLoading`, dan `controller.errorMessage`.
+
+### Step 4 — Tambahkan State pada Controller
+
+Tambahkan import service lokal pada `lib/controllers/user_controller.dart`:
 
 ```dart
 import '../services/local_storage_service.dart';
@@ -190,7 +234,7 @@ User? lastSelectedUser;
 
 `lastSelectedUser` menggunakan `User?` karena saat aplikasi pertama kali dijalankan, belum tentu ada pengguna yang sudah disimpan.
 
-### Step 4 — Baca Data Saat Controller Dibuat
+### Step 5 — Baca Data Saat Controller Dibuat
 
 Pada method `onInit()`, tambahkan pemanggilan `getLastSelectedUser()`.
 
@@ -199,7 +243,7 @@ Pada method `onInit()`, tambahkan pemanggilan `getLastSelectedUser()`.
 void onInit() {
   super.onInit();
 
-  // Method pemuatan data API yang sudah ada pada project sebelumnya.
+  // Method pemuatan data API yang sudah disesuaikan pada Step 3.
   getUsers();
 
   // Membaca pengguna terakhir dari Shared Preferences.
@@ -220,7 +264,7 @@ Future<void> getLastSelectedUser() async {
 
 Saat aplikasi dibuka, controller langsung meminta data lokal. Jika data tersedia, `lastSelectedUser` berisi object `User`; jika belum tersedia, nilainya `null`.
 
-### Step 5 — Buat Method Memilih Pengguna
+### Step 6 — Buat Method Memilih Pengguna
 
 Tambahkan method berikut ke dalam `UserController`:
 
@@ -237,7 +281,7 @@ Future<void> selectUser(User user) async {
 
 Method ini menerima object `User` dari item daftar. Object tersebut disimpan sebagai tiga value sederhana, lalu UI diperbarui tanpa perlu menutup aplikasi.
 
-### Step 6 — Buat Method Menghapus Data
+### Step 7 — Buat Method Menghapus Data
 
 Tambahkan method berikut ke dalam `UserController`:
 
@@ -254,7 +298,7 @@ Future<void> removeLastSelectedUser() async {
 
 Setelah `lastSelectedUser` menjadi `null`, kondisi pada tampilan akan membuat kartu pengguna terakhir tidak lagi ditampilkan.
 
-### Step 7 — Tambahkan Kartu Pengguna Terakhir
+### Step 8 — Tambahkan Kartu Pengguna Terakhir
 
 Buka file:
 
@@ -314,7 +358,7 @@ Widget ini menerima:
 - `user`: data pengguna yang dibaca dari controller.
 - `onDelete`: function untuk menghapus data lokal ketika tombol ikon hapus ditekan.
 
-### Step 8 — Tambahkan Tombol Pilih pada Daftar Pengguna
+### Step 9 — Tambahkan Tombol Pilih pada Daftar Pengguna
 
 Pada widget item pengguna yang sudah ada, tambahkan tombol atau `IconButton` berikut:
 
@@ -343,7 +387,7 @@ ListTile(
 )
 ```
 
-### Step 9 — Jalankan dan Tes
+### Step 10 — Jalankan dan Tes
 
 Jalankan aplikasi:
 
@@ -362,6 +406,55 @@ Yang perlu dites:
 7. Tekan ikon hapus pada kartu.
 8. Pastikan kartu menghilang.
 9. Tutup dan buka kembali aplikasi untuk memastikan data sudah benar-benar terhapus.
+
+## Step Tambahan — Indikator Loading dan Error
+
+Bagian ini bersifat opsional dan tidak wajib untuk fitur inti pengguna terakhir. Tujuannya memberi umpan balik visual ketika `getUsers()` sedang memuat data atau gagal memuat data, memanfaatkan state `isLoading` dan `errorMessage` yang sudah dibuat pada Step 3.
+
+Pada `lib/views/home_view.dart`, bungkus bagian daftar pengguna dengan pengecekan berikut:
+
+```dart
+GetBuilder<UserController>(
+  builder: (controller) {
+    if (controller.isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (controller.errorMessage.isNotEmpty) {
+      return Center(child: Text('Terjadi kesalahan: ${controller.errorMessage}'));
+    }
+
+    return ListView(
+      children: [
+        if (controller.lastSelectedUser != null)
+          _LastSelectedUserCard(
+            user: controller.lastSelectedUser!,
+            onDelete: controller.removeLastSelectedUser,
+          ),
+        ...controller.users.map(
+          (user) => ListTile(
+            leading: CircleAvatar(child: Text(user.name[0])),
+            title: Text(user.name),
+            subtitle: Text(user.email),
+            trailing: IconButton(
+              tooltip: 'Pilih pengguna',
+              icon: const Icon(Icons.bookmark_add_outlined),
+              onPressed: () => controller.selectUser(user),
+            ),
+          ),
+        ),
+      ],
+    );
+  },
+)
+```
+
+Penjelasan tambahan ini:
+
+- `controller.isLoading` diperiksa lebih dulu agar `CircularProgressIndicator` muncul selama `getUsers()` masih berjalan.
+- `controller.errorMessage.isNotEmpty` diperiksa setelah kondisi loading, sehingga pesan error hanya tampil ketika proses sudah selesai namun gagal.
+- Kartu pengguna terakhir dan daftar pengguna hanya dibangun setelah kedua kondisi di atas terlewati, supaya keduanya tidak ikut tampil saat data belum siap.
+- Karena `isLoading` dan `errorMessage` sama-sama diperbarui lewat `update()` pada Step 3, `GetBuilder` yang sama juga otomatis membangun ulang tampilan pengguna terakhir tanpa `GetBuilder` terpisah.
 
 ## Kesalahan yang Sering Terjadi
 
@@ -409,6 +502,10 @@ Operasi `set...()` dan `remove()` bersifat asinkron. Gunakan `await` agar proses
 await _localStorageService.saveLastSelectedUser(user);
 ```
 
+### View masih memanggil fetchUsers()
+
+Jika View masih memanggil `controller.fetchUsers()` dengan `FutureBuilder` setelah Step 3 dilakukan, akan muncul error method tidak ditemukan. Pastikan seluruh pemanggilan `fetchUsers()` pada `home_view.dart` sudah diganti menjadi `getUsers()` yang dipanggil dari `onInit()`, dan tampilan dibaca melalui `GetBuilder` beserta property `controller.users`.
+
 ## Eksperimen Lanjutan
 
 Setelah fitur utama berhasil, coba beberapa pengembangan berikut:
@@ -418,4 +515,4 @@ Setelah fitur utama berhasil, coba beberapa pengembangan berikut:
 3. Tampilkan dialog konfirmasi sebelum data pengguna terakhir dihapus.
 4. Tambahkan fitur menyimpan tema terang/gelap menggunakan `setBool()` dan `getBool()`.
 
-> Prinsip yang perlu diingat: Shared Preferences digunakan untuk data kecil dan sederhana. Ia menyimpan setiap value secara mandiri berdasarkan key. Jangan gunakan Shared Preferences untuk kata sandi atau data sensitif.
+> Prinsip yang perlu diingat: Shared Preferences digunakan untuk data kecil dan sederhana. Ia menyimpan setiap value secara mandiri berdasarkan key. Jangan gunakan Shared Preferences untuk kata sandi atau data sensitif
