@@ -14,6 +14,7 @@ Setelah mengikuti bagian ini, kamu akan paham:
 - Menghapus data dengan `remove()`
 - Menampilkan data lokal kembali melalui `UserController` dan `GetBuilder`
 - Menyesuaikan `getUsers()` pada `UserController` agar kompatibel dengan pola state di atas
+- Mengganti `FutureBuilder` di `HomeView` menjadi `GetBuilder` agar kartu pengguna terakhir bisa ditampilkan
 - Menampilkan indikator loading dan error saat data lokal dimuat
 
 ## Hasil Akhir
@@ -54,7 +55,7 @@ Controller membaca data dan UI menampilkan kartu pengguna terakhir
 
 ## Langkah Implementasi
 
-Urutan pengerjaannya: siapkan package, buat service lokal, sesuaikan controller yang sudah ada, sambungkan state baru, lalu tampilkan hasilnya di halaman utama.
+Urutan pengerjaannya: siapkan package, buat service lokal, sesuaikan controller yang sudah ada, sambungkan state baru, ganti struktur `HomeView` dari `FutureBuilder` ke `GetBuilder`, lalu tampilkan hasilnya di halaman utama.
 
 ### Step 1 — Tambahkan Package
 
@@ -169,7 +170,7 @@ await prefs.remove(_keyUserName);
 
 ### Step 3 — Sesuaikan Method getUsers() pada Controller
 
-Sebelum menambahkan state baru untuk Shared Preferences, pastikan dulu `getUsers()` pada `UserController` sudah dalam bentuk yang menyimpan data ke property controller, bukan sekadar mengembalikan `Future` seperti pola awal `fetchUsers()` pada project Networking. Penyesuaian ini diperlukan karena `GetBuilder` dan `update()` yang dipakai pada langkah-langkah berikutnya hanya bekerja jika controller memiliki state sendiri.
+Sebelum menambahkan state baru untuk Shared Preferences, pastikan dulu `getUsers()` pada `UserController` sudah dalam bentuk yang menyimpan data ke property controller, bukan sekadar mengembalikan `Future` yang dipanggil langsung dari `FutureBuilder` di `HomeView`. Penyesuaian ini diperlukan karena `GetBuilder` dan `update()` yang dipakai pada langkah-langkah berikutnya hanya bekerja jika controller memiliki state sendiri.
 
 Buka file:
 
@@ -177,10 +178,10 @@ Buka file:
 lib/controllers/user_controller.dart
 ```
 
-Jika `getUsers()` di project kamu masih berbentuk seperti ini:
+Jika `getUsers()` di project kamu masih berbentuk seperti ini (dipanggil langsung sebagai `future` pada `FutureBuilder`):
 
 ```dart
-Future<List<User>> fetchUsers() {
+Future<List<User>> getUsers() {
   return apiService.getUsers();
 }
 ```
@@ -213,7 +214,8 @@ Penjelasan penyesuaian:
 - `users`, `isLoading`, dan `errorMessage` dijadikan property controller agar nilainya bertahan selama controller aktif, bukan hanya sesaat seperti nilai balik `Future`.
 - `update()` dipanggil dua kali: sesaat sebelum request dimulai (agar UI langsung menampilkan status loading) dan sesudah proses selesai di blok `finally` (agar UI menampilkan hasil akhir, baik berhasil maupun gagal).
 - `users.assignAll(...)` dipakai, bukan `users = ...`, karena `users` dideklarasikan sebagai `final`. `assignAll()` mengganti isi list tanpa mengganti object list itu sendiri.
-- Bagian `View` yang sebelumnya memakai `FutureBuilder` dengan memanggil `fetchUsers()` perlu diganti menjadi `GetBuilder<UserController>` yang membaca langsung `controller.users`, `controller.isLoading`, dan `controller.errorMessage`.
+- Return type method ini berubah dari `Future<List<User>>` menjadi `Future<void>`, karena hasilnya sekarang disimpan ke `users`, bukan dikembalikan langsung ke pemanggil.
+- Perubahan return type ini berdampak langsung ke `HomeView`, karena `FutureBuilder<List<User>>` yang sebelumnya memanggil `future: userController.getUsers()` tidak bisa lagi menerima `Future<void>`. Penyesuaian `HomeView` dijelaskan lengkap pada Step 8.
 
 ### Step 4 — Tambahkan State pada Controller
 
@@ -236,14 +238,14 @@ User? lastSelectedUser;
 
 ### Step 5 — Baca Data Saat Controller Dibuat
 
-Pada method `onInit()`, tambahkan pemanggilan `getLastSelectedUser()`.
+Tambahkan `onInit()` pada `UserController` jika belum ada, lalu panggil `getUsers()` dan `getLastSelectedUser()` di dalamnya:
 
 ```dart
 @override
 void onInit() {
   super.onInit();
 
-  // Method pemuatan data API yang sudah disesuaikan pada Step 3.
+  // Memuat daftar pengguna dari API, memakai versi getUsers() hasil Step 3.
   getUsers();
 
   // Membaca pengguna terakhir dari Shared Preferences.
@@ -262,7 +264,7 @@ Future<void> getLastSelectedUser() async {
 }
 ```
 
-Saat aplikasi dibuka, controller langsung meminta data lokal. Jika data tersedia, `lastSelectedUser` berisi object `User`; jika belum tersedia, nilainya `null`.
+Sebelumnya, pemanggilan `getUsers()` dilakukan dari `HomeView` melalui `FutureBuilder`. Setelah Step 3, pemanggilan dipindahkan ke `onInit()` supaya data otomatis dimuat begitu controller dibuat, sejalan dengan cara `lastSelectedUser` dimuat.
 
 ### Step 6 — Buat Method Memilih Pengguna
 
@@ -298,27 +300,107 @@ Future<void> removeLastSelectedUser() async {
 
 Setelah `lastSelectedUser` menjadi `null`, kondisi pada tampilan akan membuat kartu pengguna terakhir tidak lagi ditampilkan.
 
-### Step 8 — Tambahkan Kartu Pengguna Terakhir
+### Step 8 — Ganti Struktur HomeView dari FutureBuilder ke GetBuilder
 
-Buka file:
+Ini adalah bagian yang paling penting untuk dipahami urutannya, karena struktur `home_view.dart` pada project Networking berbeda jauh dari yang dibutuhkan fitur ini.
 
-```text
-lib/views/home_view.dart
-```
-
-Pada `ListView` yang sudah menampilkan daftar pengguna, tambahkan kode berikut **di bagian paling atas** dari `children`:
+Struktur asli `home_view.dart` pada project Networking terlihat seperti berikut:
 
 ```dart
-if (controller.lastSelectedUser != null)
-  _LastSelectedUserCard(
-    user: controller.lastSelectedUser!,
-    onDelete: controller.removeLastSelectedUser,
-  ),
+body: FutureBuilder<List<User>>(
+  future: userController.getUsers(),
+  builder: (context, snapshot) {
+    if (snapshot.connectionState == ConnectionState.waiting) {
+      return const Center(child: CircularProgressIndicator());
+    } else if (snapshot.hasError) {
+      return Center(child: Text('Error: ${snapshot.error}'));
+    } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+      return const Center(child: Text('Tidak ada data user.'));
+    } else {
+      final users = snapshot.data!;
+      return ListView.builder(
+        itemCount: users.length,
+        itemBuilder: (context, index) {
+          final user = users[index];
+          return Card(
+            margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            child: ListTile(
+              leading: CircleAvatar(child: Text(user.id.toString())),
+              title: Text(user.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Text(user.email),
+            ),
+          );
+        },
+      );
+    }
+  },
+),
 ```
 
-Kondisi tersebut berarti: kartu hanya ditampilkan jika terdapat data pengguna yang sudah disimpan.
+Struktur ini tidak bisa dipakai lagi setelah Step 3, karena dua alasan:
 
-Kemudian tambahkan widget berikut di bagian bawah file `home_view.dart`:
+- `future: userController.getUsers()` tidak valid lagi, sebab `getUsers()` sekarang bertipe `Future<void>`, bukan `Future<List<User>>`.
+- `FutureBuilder` hanya membaca data sekali saat `future` dipanggil. Ia tidak tahu kapan harus membangun ulang tampilan saat `selectUser()` atau `removeLastSelectedUser()` mengubah `lastSelectedUser`, karena perubahan itu terjadi lewat `update()`, bukan lewat `Future` baru.
+
+Ganti seluruh isi `body` pada `HomeView` menjadi `GetBuilder<UserController>`:
+
+```dart
+body: GetBuilder<UserController>(
+  builder: (controller) {
+    if (controller.isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (controller.errorMessage.isNotEmpty) {
+      return Center(child: Text('Error: ${controller.errorMessage}'));
+    }
+
+    if (controller.users.isEmpty) {
+      return const Center(child: Text('Tidak ada data user.'));
+    }
+
+    return ListView.builder(
+      itemCount: controller.users.length + 1,
+      itemBuilder: (context, index) {
+        // Index 0 dikhususkan untuk kartu pengguna terakhir.
+        if (index == 0) {
+          return controller.lastSelectedUser != null
+              ? _LastSelectedUserCard(
+                  user: controller.lastSelectedUser!,
+                  onDelete: controller.removeLastSelectedUser,
+                )
+              : const SizedBox.shrink();
+        }
+
+        final user = controller.users[index - 1];
+        return Card(
+          margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          child: ListTile(
+            leading: CircleAvatar(child: Text(user.id.toString())),
+            title: Text(user.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text(user.email),
+            trailing: IconButton(
+              tooltip: 'Pilih pengguna',
+              icon: const Icon(Icons.bookmark_add_outlined),
+              onPressed: () => controller.selectUser(user),
+            ),
+          ),
+        );
+      },
+    );
+  },
+),
+```
+
+Penjelasan bagian ini:
+
+- `GetBuilder<UserController>` menggantikan `FutureBuilder` sepenuhnya. `builder` di sini dipanggil ulang setiap kali `update()` dipanggil di controller, baik dari `getUsers()`, `getLastSelectedUser()`, `selectUser()`, maupun `removeLastSelectedUser()`.
+- Kondisi `controller.isLoading`, `controller.errorMessage.isNotEmpty`, dan `controller.users.isEmpty` menggantikan tiga pengecekan `snapshot` pada `FutureBuilder` sebelumnya (`ConnectionState.waiting`, `snapshot.hasError`, `!snapshot.hasData || snapshot.data!.isEmpty`).
+- `ListView.builder` tetap dipakai seperti versi asli, tetapi `itemCount` ditambah satu (`controller.users.length + 1`) untuk menyediakan satu slot khusus di `index == 0` bagi kartu pengguna terakhir.
+- Ketika `index == 0` dan `lastSelectedUser` masih `null`, dikembalikan `SizedBox.shrink()` agar tidak ada ruang kosong yang aneh pada daftar.
+- Item pengguna dari `index - 1` tetap ditampilkan dengan `Card` dan `ListTile` seperti struktur asli, hanya ditambah `trailing: IconButton` sebagai tombol pilih.
+
+Tambahkan widget berikut di bagian bawah file `home_view.dart`, di luar class `HomeView`:
 
 ```dart
 class _LastSelectedUserCard extends StatelessWidget {
@@ -358,36 +440,7 @@ Widget ini menerima:
 - `user`: data pengguna yang dibaca dari controller.
 - `onDelete`: function untuk menghapus data lokal ketika tombol ikon hapus ditekan.
 
-### Step 9 — Tambahkan Tombol Pilih pada Daftar Pengguna
-
-Pada widget item pengguna yang sudah ada, tambahkan tombol atau `IconButton` berikut:
-
-```dart
-IconButton(
-  tooltip: 'Pilih pengguna',
-  icon: const Icon(Icons.bookmark_add_outlined),
-  onPressed: () => controller.selectUser(user),
-)
-```
-
-Saat ikon bookmark ditekan, object `user` dari daftar dikirim ke `selectUser(user)`. Controller kemudian menyimpan property pengguna ke Shared Preferences.
-
-Contoh jika item pengguna memakai `ListTile`:
-
-```dart
-ListTile(
-  leading: CircleAvatar(child: Text(user.name[0])),
-  title: Text(user.name),
-  subtitle: Text(user.email),
-  trailing: IconButton(
-    tooltip: 'Pilih pengguna',
-    icon: const Icon(Icons.bookmark_add_outlined),
-    onPressed: () => controller.selectUser(user),
-  ),
-)
-```
-
-### Step 10 — Jalankan dan Tes
+### Step 9 — Jalankan dan Tes
 
 Jalankan aplikasi:
 
@@ -397,9 +450,9 @@ flutter run
 
 Yang perlu dites:
 
-1. Daftar pengguna dari project Networking sebelumnya tetap tampil.
+1. Daftar pengguna dari project Networking sebelumnya tetap tampil, sekarang lewat `GetBuilder`, bukan `FutureBuilder`.
 2. Tekan ikon bookmark pada salah satu pengguna.
-3. Kartu **Pengguna Terakhir Dipilih** muncul di bagian atas.
+3. Kartu **Pengguna Terakhir Dipilih** muncul di bagian paling atas daftar.
 4. Tutup aplikasi sepenuhnya, bukan hanya hot reload.
 5. Jalankan aplikasi lagi.
 6. Pastikan kartu masih menunjukkan pengguna yang sama.
@@ -409,52 +462,13 @@ Yang perlu dites:
 
 ## Step Tambahan — Indikator Loading dan Error
 
-Bagian ini bersifat opsional dan tidak wajib untuk fitur inti pengguna terakhir. Tujuannya memberi umpan balik visual ketika `getUsers()` sedang memuat data atau gagal memuat data, memanfaatkan state `isLoading` dan `errorMessage` yang sudah dibuat pada Step 3.
+Bagian ini sifatnya penjelasan tambahan, bukan kode baru yang perlu ditulis ulang, karena indikator loading dan error sudah otomatis tercakup dalam `GetBuilder` pada Step 8 lewat kondisi `controller.isLoading` dan `controller.errorMessage.isNotEmpty`.
 
-Pada `lib/views/home_view.dart`, bungkus bagian daftar pengguna dengan pengecekan berikut:
+Yang perlu dipahami dari kedua kondisi tersebut:
 
-```dart
-GetBuilder<UserController>(
-  builder: (controller) {
-    if (controller.isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (controller.errorMessage.isNotEmpty) {
-      return Center(child: Text('Terjadi kesalahan: ${controller.errorMessage}'));
-    }
-
-    return ListView(
-      children: [
-        if (controller.lastSelectedUser != null)
-          _LastSelectedUserCard(
-            user: controller.lastSelectedUser!,
-            onDelete: controller.removeLastSelectedUser,
-          ),
-        ...controller.users.map(
-          (user) => ListTile(
-            leading: CircleAvatar(child: Text(user.name[0])),
-            title: Text(user.name),
-            subtitle: Text(user.email),
-            trailing: IconButton(
-              tooltip: 'Pilih pengguna',
-              icon: const Icon(Icons.bookmark_add_outlined),
-              onPressed: () => controller.selectUser(user),
-            ),
-          ),
-        ),
-      ],
-    );
-  },
-)
-```
-
-Penjelasan tambahan ini:
-
-- `controller.isLoading` diperiksa lebih dulu agar `CircularProgressIndicator` muncul selama `getUsers()` masih berjalan.
-- `controller.errorMessage.isNotEmpty` diperiksa setelah kondisi loading, sehingga pesan error hanya tampil ketika proses sudah selesai namun gagal.
-- Kartu pengguna terakhir dan daftar pengguna hanya dibangun setelah kedua kondisi di atas terlewati, supaya keduanya tidak ikut tampil saat data belum siap.
-- Karena `isLoading` dan `errorMessage` sama-sama diperbarui lewat `update()` pada Step 3, `GetBuilder` yang sama juga otomatis membangun ulang tampilan pengguna terakhir tanpa `GetBuilder` terpisah.
+- `controller.isLoading` bernilai `true` sesaat setelah `getUsers()` dipanggil di `onInit()`, sehingga `CircularProgressIndicator` akan langsung terlihat ketika aplikasi baru dibuka, sebelum data API selesai dimuat.
+- `controller.errorMessage.isNotEmpty` hanya terisi jika `apiService.getUsers()` melempar error di dalam blok `try-catch` pada Step 3. Selama tidak ada error, kondisi ini tetap `false` dan bagian ini dilewati.
+- Karena kedua kondisi diperiksa sebelum `ListView.builder` dibangun, kartu pengguna terakhir dan daftar pengguna tidak akan pernah tampil bersamaan dengan indikator loading atau pesan error.
 
 ## Kesalahan yang Sering Terjadi
 
@@ -502,9 +516,9 @@ Operasi `set...()` dan `remove()` bersifat asinkron. Gunakan `await` agar proses
 await _localStorageService.saveLastSelectedUser(user);
 ```
 
-### View masih memanggil fetchUsers()
+### HomeView masih memakai FutureBuilder
 
-Jika View masih memanggil `controller.fetchUsers()` dengan `FutureBuilder` setelah Step 3 dilakukan, akan muncul error method tidak ditemukan. Pastikan seluruh pemanggilan `fetchUsers()` pada `home_view.dart` sudah diganti menjadi `getUsers()` yang dipanggil dari `onInit()`, dan tampilan dibaca melalui `GetBuilder` beserta property `controller.users`.
+Jika `home_view.dart` masih memanggil `future: userController.getUsers()` setelah Step 3 dilakukan, Dart akan menampilkan error tipe data karena `getUsers()` sudah bertipe `Future<void>`, bukan `Future<List<User>>` lagi. Pastikan seluruh struktur `FutureBuilder` pada `body` sudah diganti mengikuti Step 8, termasuk `itemCount`, `itemBuilder`, dan penambahan `_LastSelectedUserCard`.
 
 ## Eksperimen Lanjutan
 
